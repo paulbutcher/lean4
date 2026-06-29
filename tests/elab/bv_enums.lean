@@ -64,8 +64,8 @@ example (a : Pair) (h : a.x > 0) : a.s = .s2 := by
 
 /--
 error: The prover found a counterexample, consider the following assignment:
-x = 0#16
 s = State.s1
+x = 0#16
 -/
 #guard_msgs in
 example (x : BitVec 16) (s : State) (h1 : s = .s1 ↔ x = 0) (h : s = .s1) : x > 0 := by
@@ -173,6 +173,7 @@ def Foo.f5 : Foo → BitVec 64
 
 example : ∀ (x y : Foo), x.f5 = y.f5 → x = y := by
   unfold Foo.f5
+  set_option trace.Meta.Tactic.bv true in
   bv_decide
 
 example (foo : Foo) : foo.f1 ≠ foo := by

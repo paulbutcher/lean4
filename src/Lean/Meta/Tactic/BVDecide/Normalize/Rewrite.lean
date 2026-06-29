@@ -7,6 +7,10 @@ module
 
 prelude
 public import Lean.Meta.Tactic.BVDecide.Normalize.Basic
+import Lean.Meta.Tactic.BVDecide.Normalize.Simproc
+import Lean.Meta.Sym.Simp.Rewrite
+import Lean.Meta.Sym.Simp.EvalGround
+import Lean.Meta.Sym.DSimp
 
 /-!
 This module contains the implementation of the rewriting pass in the fixpoint pipeline, applying
@@ -21,45 +25,27 @@ Responsible for applying the Bitwuzla style rewrite rules.
 -/
 public def rewriteRulesPass : Pass where
   name := `rewriteRules
-  run' goal := do
+  run' := do
     let bvThms ← bvNormalizeExt.getTheorems
-    let bvSimprocs ← bvNormalizeSimprocExt.getSimprocs
-    let sevalThms ← getSEvalTheorems
-    let sevalSimprocs ← Simp.getSEvalSimprocs
     let cfg ← PreProcessM.getConfig
+    let config := {
+      maxSteps := cfg.maxSteps
+    }
+    let dsimpMethods := {
+      post := Sym.DSimp.evalGround >> rewriteDsimproc
+    }
+    let discharger := Sym.Simp.mkDischargerFromSimproc Sym.Simp.evalGround
+    let simpMethods := {
+      post := Sym.Simp.evalGround >> Normalize.rewriteSimproc >> bvThms.rewrite (d := discharger)
+    }
 
-    let simpCtx ← Simp.mkContext
-      (config := {
-        failIfUnchanged := false,
-        zetaDelta := true,
-        implicitDefEqProofs := false, -- leanprover/lean4/pull/7509
-        maxSteps := cfg.maxSteps,
-        instances := true
-      })
-      (simpTheorems := #[bvThms, sevalThms])
-      (congrTheorems := (← getSimpCongrTheorems))
-
-    let hyps ← getHyps goal
-    if hyps.isEmpty then
-      return goal
-    else
-      let ⟨result?, _⟩ ← simpGoal goal
-        (ctx := simpCtx)
-        (simprocs := #[bvSimprocs, sevalSimprocs])
-        (fvarIdsToSimp := hyps)
-
-      let some (_, newGoal) := result? | return none
-      newGoal.withContext do
-        (← getPropHyps).forM PreProcessM.rewriteFinished
-      return newGoal
-where
-  getHyps (goal : MVarId) : PreProcessM (Array FVarId) := do
+    let goal ← PreProcessM.getGoal
     goal.withContext do
-      let hyps ← getPropHyps
-      let filter hyp := do
-        return !(← PreProcessM.checkRewritten hyp)
-      hyps.filterM filter
-
+      PreProcessM.mapHyps fun hyp => do
+        let newType ← Sym.dsimp hyp.type dsimpMethods { config with }
+        let hyp := { hyp with type := newType }
+        let res ← Sym.simp hyp.type simpMethods config
+        hyp.applySimpResult res
 
 end Normalize
 end Lean.Meta.Tactic.BVDecide

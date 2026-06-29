@@ -9,6 +9,8 @@ prelude
 public import Lean.Meta.Tactic.BVDecide.Reflect
 public import Lean.Meta.Tactic.BVDecide.Counterexample
 public import Lean.Meta.Tactic.BVDecide.LRAT.Cert
+import Lean.Meta.Sym.SymM
+import Lean.Meta.Sym.Util
 
 
 /-!
@@ -53,15 +55,18 @@ public abbrev UnsatProver (α : Type) := MVarId → ReflectionResult → Std.Has
     MetaM (Except CounterExample (UnsatProver.Result α))
 
 public def reflectBV (g : MVarId) : M ReflectionResult := g.withContext do
-  let hyps ← getPropHyps
   let mut sats := #[]
   let mut unusedHypotheses := {}
-  for hyp in hyps do
+  for hyp in ← M.getHyps do
     checkSystem "bv_decide"
-    if let (some reflected, lemmas) ← (SatAtBVLogical.of (mkFVar hyp)).run then
+    if (← Sym.Internal.MonadShareCommon.isDebugEnabled) then
+      Sym.Internal.Sym.assertShared hyp.type
+    if let (some reflected, lemmas) ← (SatAtBVLogical.of hyp).run then
       sats := (sats ++ lemmas).push reflected
-    else
-      unusedHypotheses := unusedHypotheses.insert hyp
+    -- TODO
+    --
+    --else
+    --  unusedHypotheses := unusedHypotheses.insert hyp
   if h : sats.size = 0 then
     let mut error := "None of the hypotheses are in the supported BitVec fragment after applying preprocessing.\n"
     error := error ++ "There are three potential reasons for this:\n"
@@ -71,7 +76,7 @@ public def reflectBV (g : MVarId) : M ReflectionResult := g.withContext do
     error := error ++ "3. The original goal was reduced to False and is thus invalid."
     throwError error
   else
-    let sat := sats[1...*].foldl (init := sats[0]) SatAtBVLogical.and
+    let sat ← sats[1...*].foldlM (init := sats[0]) SatAtBVLogical.and
     return {
       bvExpr := ShareCommon.shareCommon sat.bvExpr,
       proveFalse := sat.proveFalse,
@@ -80,7 +85,7 @@ public def reflectBV (g : MVarId) : M ReflectionResult := g.withContext do
     }
 
 public def closeWithBVReflection (g : MVarId) (unsatProver : UnsatProver α) :
-    MetaM (Except CounterExample α) := M.run do
+    M (Except CounterExample α) :=
   g.withContext do
     let reflectionResult ←
       withTraceNode `Meta.Tactic.bv (fun _ => return "Reflecting goal into BVLogicalExpr") do
@@ -88,7 +93,7 @@ public def closeWithBVReflection (g : MVarId) (unsatProver : UnsatProver α) :
     trace[Meta.Tactic.bv] "Reflected bv logical expression: {reflectionResult.bvExpr}"
 
     let atomsPairs := (← getThe State).atoms.toList.map fun (expr, {width, atomNumber, synthetic}) =>
-      (atomNumber, (width, expr, synthetic))
+      (atomNumber, (width, expr.expr, synthetic))
     let atomsAssignment := Std.HashMap.ofList atomsPairs
     match ← unsatProver g reflectionResult atomsAssignment with
     | .ok ⟨bvExprUnsat, cert⟩ =>
