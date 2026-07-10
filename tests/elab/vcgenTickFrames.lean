@@ -222,7 +222,7 @@ open Lean.Elab.Tactic.Do.Internal Lean.Elab.Tactic.Do.Internal.VCGen
 
 /-- The frame inference procedure: hold the budget given by the current cost, the first excess state
 argument of the `Nat → L` cost assertion. -/
-def tickFrameProc : FrameInferenceProc := fun _R _pre info _thm => do
+def tickFrameProc : FrameInferenceProc := fun _R _pre info _specPre => do
   unless info.Pred.isArrow && info.Pred.bindingDomain!.isConstOf ``Nat do return none
   let some cost := info.excessArgs[0]? | return none
   -- Framing the whole cost leaves the residual budget `cost - cost`; skip when that normalizes to
@@ -252,7 +252,7 @@ frames the cost over any base monad. -/
   op := ``costConj
   mkOpAppM := fun info => Meta.mkAppOptM ``costConj #[some info.Pred.bindingBody!, none]
   split := costSplit
-  proc := tickFrameProc
+  proc := some tickFrameProc
 
 /-- End-to-end: plain `vcgen` infers the budget, applies the `costConj` gadget, fires the registered
 `costSplit`, and the meet machinery closes the residual. -/

@@ -229,8 +229,21 @@ theorem sepConj_frame_r {pre₀ F R : HProp} (h : pre₀ ⊑ R) : (pre₀ ∗ F)
 
 /-! ## The registered frame procedure for `∗` -/
 
-/-- No automatic frame inference yet: frames are supplied explicitly via the `frames` clause. -/
-def sepConjFrameProc : FrameInferenceProc := fun _R _pre _info _thm => pure none
+/-- Flatten a `∗`-tree into its atoms. -/
+partial def sepAtoms (e : Expr) : Array Expr :=
+  if e.isAppOf ``sepConj then sepAtoms e.appFn!.appArg! ++ sepAtoms e.appArg!
+  else #[e]
+
+/-- Automatic frame inference by domain difference: the spec's precondition `specPre` (a `∗` of atoms,
+its footprint) is cancelled from the actual precondition `pre`; the leftover atoms are the frame. `none`
+when the footprint does not match or nothing is left over, so the spec applies without a frame. -/
+def sepConjFrameProc : FrameInferenceProc := fun _R pre _info specPre => do
+  let mut rest := sepAtoms pre
+  for atom in sepAtoms specPre do
+    let some i ← rest.findIdxM? (isDefEqS atom ·) | return none
+    rest := rest.eraseIdxIfInBounds i
+  if rest.isEmpty then return none
+  return some (rest.pop.foldr (fun a acc => mkApp2 (mkConst ``sepConj) a acc) rest.back!)
 
 /-- The lattice split for `∗`: `pre ⊑ F ∗ R` is a bespoke backward rule (`sepConj_frame_r`) that
 cancels `F` from the precondition, leaving the residual `pre₀ ⊑ R`. -/
@@ -245,18 +258,25 @@ def sepSplit : LatticeSplit where
   op := ``sepConj
   mkOpAppM := fun _ => pure (mkConst ``sepConj)
   split := sepSplit
-  proc := sepConjFrameProc
+  proc := some sepConjFrameProc
 
 /-! ## The `iFrame` example: carry a disjoint cell across a `store`
 
-`vcgen … frames` applies the `∗` frame gadget with the supplied frame, fires the `sepConj_frame_r`
-split to cancel the framed cell from the precondition, and `finish` discharges the residual wand and
-the frame condition (`frames_sepConj`). The `∗` split reaches `vcgen` because `heapFP`/`sepSplit`
-declare `numParams := 0`: `sepConj` is monomorphic, with no carrier/instance prefix before its
-operands. -/
+`vcgen` applies the `∗` frame gadget with the frame, fires the `sepConj_frame_r` split to cancel the
+framed cell from the precondition, and `finish` discharges the residual wand and the frame condition
+(`frames_sepConj`). The `∗` split reaches `vcgen` because `heapFP`/`sepSplit` declare `numParams := 0`:
+`sepConj` is monomorphic, with no carrier/instance prefix before its operands.
 
-/-- Storing to `l1` carries the disjoint cell `l2 ↦ b` untouched, framed by `vcgen`. This is the
-separation-logic move that would be `iFrame "Hl2"` in Iris. -/
+The frame is either inferred by `sepConjFrameProc` (the domain difference between the actual and the
+spec precondition) or supplied explicitly via the `frames` clause. -/
+
+/-- Storing to `l1` carries the disjoint cell `l2 ↦ b` untouched, framed automatically by `vcgen`. This
+is the separation-logic move that would be `iFrame "Hl2"` in Iris. -/
+example (l1 l2 a b x : Nat) :
+    ⦃ l1 ↦ a ∗ l2 ↦ b ⦄ (store l1 x) ⦃ fun _ => l1 ↦ x ∗ l2 ↦ b ⦄ := by
+  vcgen [store_spec] with finish
+
+/-- The same goal with the frame supplied explicitly. -/
 example (l1 l2 a b x : Nat) :
     ⦃ l1 ↦ a ∗ l2 ↦ b ⦄ (store l1 x) ⦃ fun _ => l1 ↦ x ∗ l2 ↦ b ⦄ := by
   vcgen [store_spec] frames | store l1 x => (pointsTo l2 b) with finish
