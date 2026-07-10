@@ -9,9 +9,9 @@ prelude
 public import Lean.Meta.Sym.SymM
 
 /-!
-The metadata a frame inference procedure operates on: the `wp` application metadata `WPInfo`, the
-lattice `LatticeSplit` decomposing a frame operator, and the `FrameProc` bundling an inference
-procedure with its operator. `@[frameproc]` registration lives in `FrameProcAttr`.
+The metadata a frame inference procedure operates on: the `wp` application metadata `WPInfo` and the
+`FrameProc` bundling an inference procedure with its frame operator and lattice-split rules.
+`@[frameproc]` registration lives in `FrameProcAttr`.
 -/
 
 open Lean Meta Sym
@@ -61,42 +61,6 @@ optionally produce a frame `F : R` to peel off. `none` leaves the spec to apply 
 public abbrev VCGen.FrameInferenceProc :=
   Expr → Expr → VCGen.WPInfo → Expr → SymM (Option Expr)
 
-/-- A decomposition of a lattice operator on the RHS of an entailment `pre ⊑ op … s⃗`. A custom frame
-operator supplies its own split through its `@[frameproc]`, found by `splitLatticeOp?` via the
-`FrameProcs.byOp` index.
-
-How the excess (state) arguments `s⃗` are handled follows the shape of the split:
-
-- `applyEq := some _`, `introThm := some _`: distribute `op … s⃗` pointwise through the state
-  arguments via the `_apply` equation, then apply `introThm`. Used by `⊓`/`⇨`/`⌜·⌝`/`⊤`.
-- `applyEq := some _`, `introThm := none` (an unfolding split): rewrite `op … s⃗` through its
-  unfolding `_apply` equation and leave the result for a subsequent split. Used by `costConj`.
-- `applyEq := none`: point-frame the state arguments, gating the precondition to `⌜·⃗ = s⃗⌝ ⊓ pre`,
-  then apply `introThm` at the function level. Used by `PreservesSup.upperAdjoint`. -/
-public structure VCGen.LatticeSplit where
-  /-- The `⊑`-form introduction rule decomposing `pre ⊑ op`: it concludes `_ ⊑ op` with the operand
-  subgoals as premises. `none` for an unfolding split, whose `applyEq` fully rewrites the operator. -/
-  introThm : Option Name := none
-  /-- The pointwise `_apply` equation distributing the operator through function application, or
-  `none` to point-frame the state arguments. -/
-  applyEq : Option Name := none
-  /-- Rebuild the operator from its fixed parameters `params`, its operands `as`, and the optional
-  lattice carrier type. Unused when `applyEq` is `none` and there are no operands. -/
-  mkOperator : Array Expr → Array Expr → Option Expr → MetaM Expr := fun _ _ _ =>
-    throwError "LatticeSplit.mkOperator is unavailable for a direct split (applyEq := none)"
-  /-- The number of leading arguments before the operands: the carrier type, the lattice instance,
-  and any fixed parameters. `2` for the typeclass operators `⊓`/`⇨`/`⌜·⌝`/`⊤`/`upperAdjoint` (carrier
-  and instance); `0` for a monomorphic operator with no such prefix. -/
-  numParams : Nat := 0
-  /-- The number of explicit operands the operator takes after its carrier type, instance, and
-  parameters: `2` for `⊓`/`⇨`/`upperAdjoint`, `1` for `⌜·⌝`, `0` for `⊤`. -/
-  numOperands : Nat := 0
-  /-- The number of leading state arguments the operator itself indexes, over which `applyEq`
-  distributes; `none` distributes over every state argument. A pointwise operator (`⊓`/`⇨`/`⌜·⌝`/`⊤`)
-  indexes them all (`none`); an operator over a nested lattice (e.g. `costConj` on `Nat → L`) indexes
-  only its own, leaving the rest on the residual for a subsequent split. -/
-  applyArity : Option Nat := none
-
 /-- A frame inference procedure registered with `@[frameproc]`, together with its frame operator. The
 `vcgen` frontend selects the one whose `prog` matches the goal program's monad. -/
 public structure VCGen.FrameProc where
@@ -112,9 +76,12 @@ public structure VCGen.FrameProc where
   result. Provided directly so `vcgen` reads it without building the operator, which it does only when
   a frame actually applies. -/
   resourceTy : VCGen.WPInfo → MetaM Expr
-  /-- The lattice split decomposing the frame operator `op F R` on the RHS of an entailment.
-  Consulted for a residual whose head is not a built-in `latticeSplits` operator. -/
-  split : VCGen.LatticeSplit
+  /-- Distribution and unfolding equalities that saturate the frame operator applied to state
+  arguments during a lattice split, added to the built-in connective rewrites. -/
+  rewrites : Array Name := #[]
+  /-- Terminal `⊑`-introduction rules for the frame operator, added to the built-in connective
+  terminals during a lattice split. -/
+  terminals : Array Name := #[]
   /-- The frame inference metaprogram, or `none` for an operator framed only through an explicit
   `frames` clause. -/
   proc : Option VCGen.FrameInferenceProc

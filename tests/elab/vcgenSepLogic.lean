@@ -245,20 +245,14 @@ def sepConjFrameProc : FrameInferenceProc := fun _R pre _info specPre => do
   if rest.isEmpty then return none
   return some (rest.pop.foldr (fun a acc => mkApp2 (mkConst ``sepConj) a acc) rest.back!)
 
-/-- The lattice split for `∗`: `pre ⊑ F ∗ R` is a bespoke backward rule (`sepConj_frame_r`) that
-cancels `F` from the precondition, leaving the residual `pre₀ ⊑ R`. -/
-def sepSplit : LatticeSplit where
-  mkOperator _ as _ := Meta.mkAppM ``sepConj as
-  introThm := some ``sepConj_frame_r
-  numParams := 0
-  numOperands := 2
-
+/-- The lattice split for `∗` is the terminal `sepConj_frame_r`: `pre ⊑ F ∗ R` cancels `F` from the
+precondition, leaving the residual `pre₀ ⊑ R`. -/
 @[frameproc] def heapFP : FrameProc where
   prog := ``HeapM
   op := ``sepConj
   mkOpAppM := fun _ => pure (mkConst ``sepConj)
   resourceTy := fun _ => pure (mkConst ``HProp)
-  split := sepSplit
+  terminals := #[``sepConj_frame_r]
   proc := some sepConjFrameProc
 
 /-! ## The `iFrame` example: carry a disjoint cell across a `store`

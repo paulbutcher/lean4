@@ -66,23 +66,22 @@ public def mkBackwardRuleForSplitCached (splitInfo : SplitInfo) (info : WPInfo) 
   return rule
 
 /--
-Cached version of `LatticeSplit.mkBackwardRuleForLattice`.
+Cached construction of a lattice-split backward rule for the operator heading `rhs`, saturating with
+`rewriteNames` and closing with `terminalNames` (both the built-in seeds unioned with the operator's
+`@[frameproc]` contributions). Returns `none` when saturation reaches a head with no terminal.
 
-Cache key: `(split lemma, argument types, excessArgs.size)`.
+Cache key: `(operator head, argument types, argument count)`.
 -/
-public def mkBackwardRuleForLatticeCached (c : LatticeSplit) (params as excessArgs : Array Expr)
-    (resultType? : Option Expr := none) : VCGenM BackwardRule := do
-  let s := (← get).latticeBackwardRuleCache
-  let asTypes ← (as.mapM Sym.inferType : SymM (Array Expr))
-  -- `params` (e.g. the frame operator of `PreservesSup.upperAdjoint`) is functionally determined by `asTypes`,
-  -- so it need not enter the cache key. An unfolding split has no `introThm`, so key on its `applyEq`.
-  let ruleKey := (c.introThm <|> c.applyEq).getD .anonymous
-  let key := (ruleKey, asTypes.map ExprPtr.mk, excessArgs.size)
-  if let some rule := s[key]? then return rule
-  let rule ← c.mkBackwardRuleForLattice params as excessArgs resultType?
+public def mkLatticeSplitRuleCached (headName : Name) (rhs : Expr)
+    (rewriteNames terminalNames : Array Name) : VCGenM (Option BackwardRule) := do
+  let argTypes ← (rhs.getAppArgs.mapM Sym.inferType : SymM (Array Expr))
+  let key := (headName, argTypes.map ExprPtr.mk, rhs.getAppNumArgs)
+  if let some rule := (← get).latticeBackwardRuleCache[key]? then return some rule
+  let terminals ← mkLatticeTerminals terminalNames
+  let some rule ← mkLatticeSplitRule rhs rewriteNames terminals | return none
   let rule ← rule.shareCommon
   modify fun st => { st with latticeBackwardRuleCache := st.latticeBackwardRuleCache.insert key rule }
-  return rule
+  return some rule
 
 /-- Move the frame variable to the front of a frame rule's subgoals. The frame is the sole subgoal
 another subgoal (the pre-VC and the `WP.Frames` condition) depends on, so applying the rule surfaces

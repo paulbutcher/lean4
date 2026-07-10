@@ -235,24 +235,16 @@ def tickFrameProc : FrameInferenceProc := fun _R _pre info _specPre => do
   if cost.nat? == some 0 then return none
   return some cost
 
-/-- The lattice split for `costConj`: `costConj_apply` unfolds `costConj r b n` to `⌜r ≤ n⌝ ⊓ b (n - r)`
-for a subsequent meet split. -/
-def costSplit : LatticeSplit where
-  mkOperator _ as _ := Meta.mkAppM ``costConj as
-  applyEq := some ``costConj_apply
-  numParams := 2
-  numOperands := 2
-  applyArity := some 1
-
 /-- Register the cost frame inference procedure for `vcgen`, indexed by the `TickT` program type. The
 frame operator `costConj` is built at the base lattice `L` read off the assertion type `Nat → L`, so it
-frames the cost over any base monad. -/
+frames the cost over any base monad. Its `costConj_apply` rewrite unfolds `costConj r b n` to
+`⌜r ≤ n⌝ ⊓ b (n - r)`, inheriting the built-in meet terminal. -/
 @[frameproc] def tickFP : FrameProc where
   prog := ``TickT
   op := ``costConj
   mkOpAppM := fun info => Meta.mkAppOptM ``costConj #[some info.Pred.bindingBody!, none]
   resourceTy := fun _ => pure (mkConst ``Nat)
-  split := costSplit
+  rewrites := #[``costConj_apply]
   proc := some tickFrameProc
 
 /-- End-to-end: plain `vcgen` infers the budget, applies the `costConj` gadget, fires the registered

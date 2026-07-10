@@ -455,7 +455,6 @@ private def meetFrameProc : FrameProc where
   op := ``Lean.Order.meet
   mkOpAppM info := Meta.mkAppOptM ``Lean.Order.meet #[info.Pred, none]
   resourceTy info := pure info.Pred
-  split := LatticeSplit.meet
   proc := none
 
 /-- The frame procedure for `info`'s monad: the `@[frameproc]` registered for the program type, or the

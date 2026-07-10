@@ -81,31 +81,28 @@ private def refoldHimpUpperAdjoint? (goal : MVarId) (rhs : Expr) :
     return some (← goal.replaceTargetDefEq newTarget, rhs')
 
 /--
-Decompose a supported lattice connective (`⊓`, `⇨`, `⌜p⌝`, `⊤`) on the RHS of `pre ⊑ rhs` by
-applying its cached split rule, looked up from `latticeSplits` by head constant. Returns `none` if
-the head is not a supported connective or its rule does not apply.
+Decompose a supported lattice connective (`⊓`, `⇨`, `⌜p⌝`, `⊤`) or a registered frame operator on the
+RHS of `pre ⊑ rhs` by saturating it with the built-in and `@[frameproc]` rewrites, closing it with a
+terminal, and point-framing any excess state arguments. Returns `none` if the head is neither a
+built-in connective nor a frame operator, or its rule does not apply.
 
-An embedded proposition `⌜p⌝` is decomposed only when the precondition is `⊤`: its `⊤`-fixed split
-rule fails to apply otherwise, since turning `pre ⊑ ⌜p⌝` into the subgoal `p` drops `pre`.
+An embedded proposition `⌜p⌝` is decomposed only when the precondition is `⊤`: its `⊤`-fixed terminal
+`top_le_ofProp` fails to apply otherwise, since turning `pre ⊑ ⌜p⌝` into the subgoal `p` drops `pre`.
 -/
 public def splitLatticeOp? (goal : MVarId) (rhs : Expr) :
     VCGenM (Option (List MVarId)) := do
   -- Refold a meet upper adjoint to `F ⇨ Q` up front, so the dispatch below takes the clean `⇨` path.
   let (goal, rhs) := (← refoldHimpUpperAdjoint? goal rhs).getD (goal, rhs)
-  rhs.withApp fun head args => do
-    let some headName := head.constName? | return none
-    let ctx ← read
-    -- A registered frame operator `op F R` decomposes through its frame procedure's `split`; every
-    -- other operator (including the generic residual wand `PreservesSup.upperAdjoint f b`) through
-    -- the built-in `latticeSplits`.
-    let some c := (ctx.frameProcs.byOp[headName]?.map (·.split)) <|> latticeSplits[headName]? | return none
-    let params := args.extract 0 c.numParams
-    let as := args.extract c.numParams (c.numParams + c.numOperands)
-    let excessArgs := args.drop (c.numParams + c.numOperands)
-    let rule ← mkBackwardRuleForLatticeCached c params as excessArgs args[0]?
-    match ← rule.applyChecked goal with
-    | .goals goals => return some goals
-    | .failed => return none
+  let some headName := rhs.getAppFn.constName? | return none
+  let fp? := (← read).frameProcs.byOp[headName]?
+  -- Attempt a split only for a built-in connective or a registered frame operator.
+  unless fp?.isSome || builtinLatticeHeads.contains headName do return none
+  let rewriteNames := builtinLatticeRewrites ++ (fp?.map (·.rewrites)).getD #[]
+  let terminalNames := builtinLatticeTerminals ++ (fp?.map (·.terminals)).getD #[]
+  let some rule ← mkLatticeSplitRuleCached headName rhs rewriteNames terminalNames | return none
+  match ← rule.applyChecked goal with
+  | .goals goals => return some goals
+  | .failed => return none
 
 /--
 Reduce a precondition that is the bare top applied to the state arguments introduced by
