@@ -387,6 +387,7 @@ public meta def dyLeanFrameProc : FrameInferenceProc := fun _R pre _info _specPr
   prog := ``Traceful
   op := ``Lean.Order.meet
   mkOpAppM := fun info => Meta.mkAppOptM ``Lean.Order.meet #[info.Pred, none]
+  resourceTy := fun info => pure info.Pred
   split := LatticeSplit.meet
   proc := some dyLeanFrameProc
 end DyLeanFrameProc

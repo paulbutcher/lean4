@@ -108,6 +108,10 @@ public structure VCGen.FrameProc where
   op : Name
   /-- Builds the frame operator (head constant `op`) applied to the goal's assertion type. -/
   mkOpAppM : VCGen.WPInfo → MetaM Expr
+  /-- The resource type `R` of the operator `op : R → Pred → Pred`, i.e. the domain of `mkOpAppM`'s
+  result. Provided directly so `vcgen` reads it without building the operator, which it does only when
+  a frame actually applies. -/
+  resourceTy : VCGen.WPInfo → MetaM Expr
   /-- The lattice split decomposing the frame operator `op F R` on the RHS of an entailment.
   Consulted for a residual whose head is not a built-in `latticeSplits` operator. -/
   split : VCGen.LatticeSplit

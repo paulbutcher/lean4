@@ -251,6 +251,7 @@ frames the cost over any base monad. -/
   prog := ``TickT
   op := ``costConj
   mkOpAppM := fun info => Meta.mkAppOptM ``costConj #[some info.Pred.bindingBody!, none]
+  resourceTy := fun _ => pure (mkConst ``Nat)
   split := costSplit
   proc := some tickFrameProc
 

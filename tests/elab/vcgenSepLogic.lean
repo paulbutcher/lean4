@@ -17,7 +17,7 @@ A heap `Heap := Nat → Option Nat` with separating conjunction `∗` (disjoint 
 and points-to `↦`. Unlike the lattice meet, `∗` is not cartesian: `l ↦ v ∗ l ↦ v = ⊥`. The frame
 operator is `∗` itself; its upper adjoint is the wand. `HeapM.wp` is the `frameClosure` of the base
 `StateM Heap` wp over `∗`, so every program frames every heap assertion by construction. The `iFrame`
-step is proved by hand, exposing where the automatic frame path does and does not fit `∗`.
+step is proved by hand, exposing where the frame-inference path does and does not fit `∗`.
 -/
 
 open Lean Order Meta Elab Tactic Sym Std Internal.Do Std.Internal.Do.CompleteLattice
@@ -257,6 +257,7 @@ def sepSplit : LatticeSplit where
   prog := ``HeapM
   op := ``sepConj
   mkOpAppM := fun _ => pure (mkConst ``sepConj)
+  resourceTy := fun _ => pure (mkConst ``HProp)
   split := sepSplit
   proc := some sepConjFrameProc
 
