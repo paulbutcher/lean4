@@ -718,35 +718,46 @@ info: some (some "value")
   let result ← runParser parseRequestTarget "/api?key=value"
   IO.println (repr (result.query.find? "key"))
 
--- Raw lookup APIs should not alias with pre-encoded key spellings.
-#guard
-  match (parseRequestTarget <* Std.Internal.Parsec.eof).run "/api?%61=1&a=2".toUTF8 with
-  | .ok result =>
-      let encodedA? := EncodedQueryParam.fromString? "%61"
-      ((result.query.find? "a" |>.bind id |>.bind EncodedQueryParam.decode) == some "2") &&
-      (result.query.find? "%61").isNone &&
-      result.query.contains "a" &&
-      !result.query.contains "%61" &&
-      (match encodedA? with
-       | some encodedA =>
-           ((result.query.findEncoded? encodedA |>.bind id |>.bind EncodedQueryParam.decode) == some "1") &&
-           result.query.containsEncoded encodedA
-       | none => false)
-  | .error _ => false
-
+-- A parameter is named by what its name decodes to, so both spellings in "?%61=1&a=2" are the one
+-- parameter `a`, and the raw and pre-encoded entry points agree on that. The key "%61" is a name
+-- containing a literal percent sign, so it matches neither.
 #guard
   match (parseRequestTarget <* Std.Internal.Parsec.eof).run "/api?%61=1&a=2".toUTF8 with
   | .ok result =>
       match EncodedQueryParam.fromString? "%61" with
       | some encodedA =>
-          let erasedRaw := result.query.erase "a"
-          let erasedEncoded := result.query.eraseEncoded encodedA
-          !erasedRaw.contains "a" &&
-          erasedRaw.containsEncoded encodedA &&
-          !erasedEncoded.containsEncoded encodedA &&
-          erasedEncoded.contains "a"
+          ((result.query.find? "a" |>.bind id |>.bind EncodedQueryParam.decode) == some "1") &&
+          ((result.query.findDecoded? encodedA |>.bind id |>.bind EncodedQueryParam.decode) == some "1") &&
+          (result.query.findAll "a").size == 2 &&
+          (result.query.findAllDecoded encodedA).size == 2 &&
+          result.query.contains "a" &&
+          result.query.containsDecoded encodedA &&
+          (result.query.erase "a").isEmpty &&
+          (result.query.eraseDecoded encodedA).isEmpty &&
+          (result.query.find? "%61").isNone &&
+          !result.query.contains "%61"
       | none => false
   | .error _ => false
+
+-- A name that arrives percent-encoded is reachable by the name it decodes to (issue #14934).
+def encodedColonQuery : URI.Query :=
+  match EncodedQueryParam.fromString? "a%3Ab", EncodedQueryParam.fromString? "on" with
+  | some k, some v => URI.Query.empty.insertEncoded k (some v)
+  | _, _ => URI.Query.empty
+
+#guard encodedColonQuery.get "a:b" == some "on"
+#guard encodedColonQuery.getD "a:b" "missing" == "on"
+#guard encodedColonQuery.contains "a:b"
+#guard (encodedColonQuery.findAll "a:b").size == 1
+#guard (encodedColonQuery.erase "a:b").isEmpty
+#guard toString (encodedColonQuery.set "a:b" "off") == "?a:b=off"
+
+/--
+info: some "on"
+-/
+#guard_msgs in
+#eval IO.println <| repr <|
+  (URI.parse? "https://example.com/consent?a%3Ab=on").bind (·.query.bind (·.get "a:b"))
 
 -- ============================================================================
 -- Query Operations
